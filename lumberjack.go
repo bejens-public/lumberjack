@@ -93,6 +93,11 @@ type Logger struct {
 	// based on age.
 	MaxAge int `json:"maxage" yaml:"maxage"`
 
+	//RollingInterval is the number of seconds before rotating to a new log file.
+	//the old log files will be deleted by the MaxAge & MaxBackups properties as usual.
+	//if the rolling interval is 0 the feature is off, default is 0.
+	RollingInterval time.Duration `json:"rollinginterval" yaml:"rollinginterval"`
+
 	// MaxBackups is the maximum number of old log files to retain.  The default
 	// is to retain all old log files (though MaxAge may still cause them to get
 	// deleted.)
@@ -106,6 +111,8 @@ type Logger struct {
 	// Compress determines if the rotated log files should be compressed
 	// using gzip. The default is not to perform compression.
 	Compress bool `json:"compress" yaml:"compress"`
+
+	createdTime time.Time
 
 	size int64
 	file *os.File
@@ -145,6 +152,12 @@ func (l *Logger) Write(p []byte) (n int, err error) {
 
 	if l.file == nil {
 		if err = l.openExistingOrNew(len(p)); err != nil {
+			return 0, err
+		}
+	}
+
+	if l.intervalExceeded() {
+		if err := l.rotate(); err != nil {
 			return 0, err
 		}
 	}
@@ -238,6 +251,7 @@ func (l *Logger) openNew() error {
 	}
 	l.file = f
 	l.size = 0
+	l.createdTime = time.Now()
 	return nil
 }
 
@@ -447,6 +461,10 @@ func (l *Logger) max() int64 {
 		return int64(defaultMaxSize * megabyte)
 	}
 	return int64(l.MaxSize) * int64(megabyte)
+}
+
+func (l *Logger) intervalExceeded() bool {
+	return l.RollingInterval > 0 && time.Now().Sub(l.createdTime) > l.RollingInterval
 }
 
 // dir returns the directory for the current filename.
